@@ -13,10 +13,11 @@ interface StatusIndicatorProps {
 
 /**
  * Status configuration for display.
+ * Labels and CSS class names for each ASR status.
  */
 const STATUS_CONFIG: Record<ASRStatus, { label: string; className: string }> = {
-  idle: { label: '', className: 'status-indicator--idle' },
-  connecting: { label: 'Connecting...', className: 'status-indicator--connecting' },
+  idle: { label: 'Hold Right Option', className: 'status-indicator--idle' },
+  connecting: { label: 'Listening...', className: 'status-indicator--connecting' },
   listening: { label: 'Listening...', className: 'status-indicator--listening' },
   processing: { label: 'Processing...', className: 'status-indicator--processing' },
   done: { label: 'Done', className: 'status-indicator--done' },
@@ -33,11 +34,6 @@ const STATUS_CONFIG: Record<ASRStatus, { label: string; className: string }> = {
  */
 export function StatusIndicator({ status }: StatusIndicatorProps): ReactNode {
   const config = STATUS_CONFIG[status];
-
-  // Don't render anything for idle status
-  if (status === 'idle') {
-    return null;
-  }
 
   return (
     <div className={`status-indicator ${config.className}`}>

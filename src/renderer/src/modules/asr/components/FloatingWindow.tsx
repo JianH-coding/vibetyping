@@ -29,27 +29,23 @@ export function FloatingWindow(): ReactNode {
   const { status, result, error } = useASRStatus();
 
   // Determine what to show based on status
-  const isListening = status === 'listening';
-  const isProcessingOrDone = status === 'processing' || status === 'done';
-  const hasTranscriptText = Boolean(result?.text) && isProcessingOrDone;
+  // FIX: Show transcript during listening state for real-time streaming display
+  const hasTranscriptText =
+    Boolean(result?.text) &&
+    (status === 'listening' || status === 'processing' || status === 'done');
 
-  // Show status indicator for: connecting, listening, error, or when no transcript
-  const showStatusIndicator = !hasTranscriptText || isListening;
+  // Always show status indicator (status bar at top)
+  const showStatusIndicator = true;
 
   return (
     <div className="floating-window">
       <div className="floating-window__content">
-        {/* Status indicator */}
-        {showStatusIndicator && (
-          <StatusIndicator status={status} />
-        )}
+        {/* Status indicator - always visible */}
+        {showStatusIndicator && <StatusIndicator status={status} />}
 
-        {/* Transcript display */}
+        {/* Transcript display - show during listening, processing, and done */}
         {hasTranscriptText && result && (
-          <TranscriptDisplay
-            text={result.text}
-            interim={!result.isFinal}
-          />
+          <TranscriptDisplay text={result.text} interim={!result.isFinal} />
         )}
 
         {/* Error display */}
