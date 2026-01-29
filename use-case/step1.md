@@ -119,3 +119,7 @@ cp -r ../old-project/electron-doc ./
 ## prompt5 
 
 /record-session
+
+## prompt6
+
+帮我归档完成的项目
