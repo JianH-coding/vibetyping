@@ -89,3 +89,101 @@
 ### Next Steps
 
 - None - task complete
+
+## Session 2: ASR Infrastructure Implementation (Batch 1)
+
+**Date**: 2026-01-29
+**Task**: ASR Infrastructure Implementation (Batch 1)
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Summary
+
+完成 ASR 集成的 Batch 1：基础设施层实现。
+
+## Task Planning
+
+规划了 5 个 ASR 相关 task，支持并行开发：
+
+| Task | Type | Description |
+|------|------|-------------|
+| asr-infrastructure | fullstack | Shared types, IPC channels, preload API (Batch 1) |
+| asr-audio-recorder | frontend | Web Audio API recording (Batch 2) |
+| asr-volcengine-client | backend | WebSocket client (Batch 2) |
+| asr-floating-window | fullstack | Status display UI (Batch 2) |
+| asr-integration | fullstack | E2E flow (Batch 3) |
+
+## Implementation Details
+
+### Shared Types (`src/shared/types/asr.ts`)
+- `ASRConfig`: Volcengine API 配置
+- `ASRResult`: 识别结果 (interim/final)
+- `ASRStatus`: 状态机状态
+- `AudioChunk`: PCM 音频数据
+
+### IPC Channels (`src/shared/constants/channels.ts`)
+- `asr:start`, `asr:stop`, `asr:send-audio`
+- `asr:result`, `asr:status`, `asr:error`
+
+### Preload API (`src/preload.ts`)
+- `window.api.asr.start/stop/sendAudio`
+- `window.api.asr.onResult/onStatus/onError`
+
+### IPC Handlers (`src/main/ipc/`)
+- Stub implementations for asr-integration task
+- `setupAllIpcHandlers()` registration
+
+## Configuration Updates
+
+- Upgraded TypeScript from 4.5.4 to 5.x
+- Added `typecheck` script to package.json
+- Updated tsconfig.json with include/exclude
+- Updated worktree.yaml verify commands
+
+## Files Created
+
+| Directory | Files |
+|-----------|-------|
+| `src/shared/types/` | asr.ts, index.ts |
+| `src/shared/constants/` | channels.ts, index.ts |
+| `src/main/ipc/` | asr.handler.ts, index.ts |
+| `src/types/` | global.d.ts, vite-env.d.ts |
+
+## Verification
+
+- ✅ `pnpm lint` passed
+- ✅ `pnpm typecheck` passed
+- ✅ Check agent verified all acceptance criteria
+
+## Next Steps
+
+Start Batch 2 parallel development:
+- asr-audio-recorder (frontend)
+- asr-volcengine-client (backend)
+- asr-floating-window (fullstack)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `974e107` | (see git log) |
+| `90c2688` | (see git log) |
+| `af015d9` | (see git log) |
+| `38e348b` | (see git log) |
+| `e71f40c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
