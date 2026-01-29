@@ -1,7 +1,7 @@
 {
-  "id": "asr-binary-protocol",
-  "name": "asr-binary-protocol",
-  "title": "Fix Volcengine ASR Binary Protocol",
+  "id": "floating-window-visual-bugs",
+  "name": "floating-window-visual-bugs",
+  "title": "Floating Window 视觉 Bug 修复",
   "description": "",
   "status": "planning",
   "dev_type": null,
@@ -14,12 +14,24 @@
   "branch": null,
   "base_branch": null,
   "worktree_path": null,
-  "current_phase": 0,
+  "current_phase": 1,
   "next_action": [
-    {"phase": 1, "action": "implement"},
-    {"phase": 2, "action": "check"},
-    {"phase": 3, "action": "finish"},
-    {"phase": 4, "action": "create-pr"}
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
   ],
   "commit": null,
   "pr_url": null,
