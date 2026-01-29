@@ -96,6 +96,14 @@ const floatingWindowApi = {
    */
   hide: (): Promise<{ success: boolean }> =>
     ipcRenderer.invoke(IPC_CHANNELS.FLOATING_WINDOW.HIDE),
+
+  /**
+   * Set content height for adaptive window sizing.
+   * @param height - Content height in pixels (from scrollHeight)
+   */
+  setContentHeight: (height: number): void => {
+    ipcRenderer.send(IPC_CHANNELS.FLOATING_WINDOW.SET_CONTENT_HEIGHT, height);
+  },
 };
 
 // Expose the API to the renderer process

@@ -61,6 +61,12 @@ interface FloatingWindowApi {
    * Hide the floating window.
    */
   hide: () => Promise<{ success: boolean }>;
+
+  /**
+   * Set content height for adaptive window sizing.
+   * @param height - Content height in pixels (from scrollHeight)
+   */
+  setContentHeight: (height: number) => void;
 }
 
 /**

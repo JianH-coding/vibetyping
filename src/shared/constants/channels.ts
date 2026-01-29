@@ -23,5 +23,7 @@ export const IPC_CHANNELS = {
     SHOW: 'floating-window:show',
     /** Hide floating window (Renderer -> Main) */
     HIDE: 'floating-window:hide',
+    /** Set content height for adaptive window sizing (Renderer -> Main) */
+    SET_CONTENT_HEIGHT: 'floating-window:set-content-height',
   },
 } as const;

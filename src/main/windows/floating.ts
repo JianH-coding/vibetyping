@@ -3,19 +3,50 @@
  * Manages the ASR status floating window that displays recording state and transcription.
  */
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, screen } from 'electron';
 import path from 'node:path';
 import type { ASRResult, ASRStatus } from '../../shared/types/asr';
 import { IPC_CHANNELS } from '../../shared/constants/channels';
 
 /**
- * Floating window configuration constants.
+ * Floating window layout configuration constants.
+ * Based on design spec for ASR floating window.
+ *
+ * Layout structure:
+ * ┌─────────────────────────────────────┐ ─┬─ paddingTop: 10px
+ * │  ● Listening...                     │  │  statusBarHeight: 11px
+ * │─────────────────────────────────────│  │  statusBarPaddingBottom: 6px
+ * │                                     │  │  statusBarBorder: 1px
+ * │                                     │  │  gap: 6px
+ * ├─────────────────────────────────────┤ ─┼─ chromeHeight: 40px (fixed)
+ * │  Transcribed text content           │  │
+ * │  Second line...                     │  │  contentHeight: 18-72px (dynamic)
+ * │  Third line...                      │  │
+ * │  Fourth line...                     │  │
+ * ├─────────────────────────────────────┤ ─┴─
+ * │                                     │     paddingBottom: 6px
+ * └─────────────────────────────────────┘
+ *      Total height = chromeHeight + contentHeight
+ *                   = 40px + (18px × lines)
+ *                   = 58px ~ 112px
  */
 const FLOATING_WINDOW_CONFIG = {
-  WIDTH: 300,
-  HEIGHT: 100,
+  /** Window width in pixels */
+  WIDTH: 320,
+  /** Minimum window height (chrome + single line) */
+  MIN_HEIGHT: 58,
+  /** Maximum window height (chrome + 4 lines) */
+  MAX_HEIGHT: 112,
+  /** Fixed chrome height (padding + status bar + gap) */
+  CHROME_HEIGHT: 40,
+  /** Single line height (14px font × 1.25 line-height ≈ 18px) */
+  LINE_HEIGHT: 18,
+  /** Distance from bottom of screen (px) */
+  BOTTOM_OFFSET: 80,
   /** Auto-hide delay after recognition is done (ms) */
   AUTO_HIDE_DELAY: 2000,
+  /** Debounce threshold for height changes (px) */
+  HEIGHT_DEBOUNCE_THRESHOLD: 4,
 } as const;
 
 /**
@@ -24,6 +55,8 @@ const FLOATING_WINDOW_CONFIG = {
 export class FloatingWindowManager {
   private window: BrowserWindow | null = null;
   private autoHideTimer: NodeJS.Timeout | null = null;
+  /** Current window height for debounce comparison */
+  private currentHeight: number = FLOATING_WINDOW_CONFIG.MIN_HEIGHT;
 
   /**
    * Create the floating window.
@@ -34,26 +67,44 @@ export class FloatingWindowManager {
       return;
     }
 
+    // Get primary display to calculate centered position
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+    // Calculate centered position at bottom of screen
+    const x = Math.round((screenWidth - FLOATING_WINDOW_CONFIG.WIDTH) / 2);
+    const y = screenHeight - FLOATING_WINDOW_CONFIG.MIN_HEIGHT - FLOATING_WINDOW_CONFIG.BOTTOM_OFFSET;
+
     this.window = new BrowserWindow({
       width: FLOATING_WINDOW_CONFIG.WIDTH,
-      height: FLOATING_WINDOW_CONFIG.HEIGHT,
+      height: FLOATING_WINDOW_CONFIG.MIN_HEIGHT,
+      x,
+      y,
       frame: false,
       transparent: true,
       alwaysOnTop: true,
       skipTaskbar: true,
       resizable: false,
-      movable: true,
+      movable: false, // Fixed position at bottom center
       show: false,
       hasShadow: false,
       // CRITICAL: Prevent window from stealing focus
       // This allows text insertion to work in the previously focused app
       focusable: false,
+      // macOS native vibrancy effect (popover style)
+      vibrancy: 'popover',
+      fullscreenable: false,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
       },
     });
+
+    // Make window visible on all workspaces (macOS/Linux)
+    // This must be called after window creation
+    // NOTE: Temporarily disabled - may cause dock icon to hide on macOS
+    // this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
     // Load the floating window HTML
     if (FLOATING_WINDOW_VITE_DEV_SERVER_URL) {
@@ -88,6 +139,14 @@ export class FloatingWindowManager {
       this.create();
     }
     this.clearAutoHideTimer();
+
+    // Only reset height if window is NOT currently visible (new session starting)
+    // This prevents the "bounce" effect when status changes during recording
+    const wasVisible = this.window?.isVisible() ?? false;
+    if (!wasVisible) {
+      this.resetHeightSync();
+    }
+
     // Use showInactive() to show window without stealing focus
     // This is critical for text insertion to work in the previously focused app
     this.window?.showInactive();
@@ -99,6 +158,8 @@ export class FloatingWindowManager {
   hide(): void {
     this.clearAutoHideTimer();
     this.window?.hide();
+    // Reset height for next show
+    this.resetHeight();
   }
 
   /**
@@ -132,9 +193,12 @@ export class FloatingWindowManager {
       this.scheduleAutoHide();
     }
 
-    // Hide on idle or error (error will be handled separately)
+    // Hide on idle - hide FIRST before sending status to prevent visual bounce
+    // (renderer re-rendering with no content before window hides)
     if (status === 'idle') {
       this.hide();
+      // Don't send 'idle' status to renderer - window is already hidden
+      return;
     }
 
     this.window.webContents.send(IPC_CHANNELS.ASR.STATUS, status);
@@ -178,6 +242,100 @@ export class FloatingWindowManager {
    */
   getWindow(): BrowserWindow | null {
     return this.window;
+  }
+
+  /**
+   * Set content height and adapt window size.
+   * Window expands upward from its fixed bottom position.
+   *
+   * Height calculation:
+   * - contentHeight <= LINE_HEIGHT (18px): use MIN_HEIGHT (58px)
+   * - contentHeight > LINE_HEIGHT: use min(CHROME_HEIGHT + contentHeight, MAX_HEIGHT)
+   *
+   * @param contentHeight - Content area height in pixels (from scrollHeight)
+   */
+  setContentHeight(contentHeight: number): void {
+    if (!this.window || this.window.isDestroyed()) {
+      return;
+    }
+
+    const { CHROME_HEIGHT, LINE_HEIGHT, MIN_HEIGHT, MAX_HEIGHT, HEIGHT_DEBOUNCE_THRESHOLD } =
+      FLOATING_WINDOW_CONFIG;
+
+    // Calculate target window height based on content height
+    let targetHeight: number;
+    if (contentHeight <= LINE_HEIGHT) {
+      // Single line or empty: use minimum height
+      targetHeight = MIN_HEIGHT;
+    } else {
+      // Multiple lines: chrome + content, capped at max
+      targetHeight = Math.min(CHROME_HEIGHT + contentHeight, MAX_HEIGHT);
+    }
+
+    // Debounce: ignore small changes (< 4px)
+    if (Math.abs(targetHeight - this.currentHeight) < HEIGHT_DEBOUNCE_THRESHOLD) {
+      return;
+    }
+
+    // Get current bounds
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { height: screenHeight } = primaryDisplay.workAreaSize;
+    const bounds = this.window.getBounds();
+
+    // Calculate new Y position to expand upward (keep bottom edge fixed)
+    const newY = screenHeight - targetHeight - FLOATING_WINDOW_CONFIG.BOTTOM_OFFSET;
+
+    // Update bounds (position and size together to expand upward)
+    this.window.setBounds({
+      x: bounds.x,
+      y: newY,
+      width: FLOATING_WINDOW_CONFIG.WIDTH,
+      height: targetHeight,
+    });
+
+    // Update current height for next debounce comparison
+    this.currentHeight = targetHeight;
+  }
+
+  /**
+   * Reset window height to minimum.
+   * Called when hiding window or clearing content.
+   */
+  resetHeight(): void {
+    this.currentHeight = FLOATING_WINDOW_CONFIG.MIN_HEIGHT;
+  }
+
+  /**
+   * Reset window height to minimum synchronously.
+   * Called before showing window to prevent leftover size from previous session.
+   * Actually resizes the window.
+   */
+  private resetHeightSync(): void {
+    const { MIN_HEIGHT, WIDTH, BOTTOM_OFFSET } = FLOATING_WINDOW_CONFIG;
+
+    // Always reset the tracked height
+    this.currentHeight = MIN_HEIGHT;
+
+    // If window doesn't exist or is destroyed, just reset the variable
+    if (!this.window || this.window.isDestroyed()) {
+      return;
+    }
+
+    // Get screen dimensions for positioning
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { height: screenHeight } = primaryDisplay.workAreaSize;
+    const bounds = this.window.getBounds();
+
+    // Calculate new Y position to keep bottom edge fixed
+    const newY = screenHeight - MIN_HEIGHT - BOTTOM_OFFSET;
+
+    // Actually resize the window to minimum height
+    this.window.setBounds({
+      x: bounds.x,
+      y: newY,
+      width: WIDTH,
+      height: MIN_HEIGHT,
+    });
   }
 
   /**

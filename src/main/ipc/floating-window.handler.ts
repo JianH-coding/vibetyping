@@ -22,4 +22,10 @@ export function setupFloatingWindowHandlers(): void {
     floatingWindow.hide();
     return { success: true };
   });
+
+  // Handle content height update for adaptive window sizing
+  // Use ipcMain.on (not handle) since this is a fire-and-forget message
+  ipcMain.on(IPC_CHANNELS.FLOATING_WINDOW.SET_CONTENT_HEIGHT, (_, height: number) => {
+    floatingWindow.setContentHeight(height);
+  });
 }
