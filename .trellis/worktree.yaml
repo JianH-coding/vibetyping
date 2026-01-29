@@ -8,7 +8,7 @@
 #-------------------------------------------------------------------------------
 
 # Worktree storage directory (relative to project root)
-worktree_dir: ../trellis-worktrees
+worktree_dir: ../ot-worktrees
 
 #-------------------------------------------------------------------------------
 # Files to Copy
@@ -17,9 +17,8 @@ worktree_dir: ../trellis-worktrees
 # Files to copy to each worktree (each worktree needs independent copy)
 # These files contain sensitive info or need worktree-independent config
 copy:
-  # Environment variables (uncomment and customize as needed)
-  # - .env
-  # - .env.local
+  # Environment variables
+  - .env
   # Workflow config
   - .trellis/.developer
 
@@ -30,10 +29,8 @@ copy:
 # Commands to run after creating worktree
 # Executed in worktree directory, in order, abort on failure
 post_create:
-  # Install dependencies (uncomment based on your package manager)
-  # - npm install
-  # - pnpm install --frozen-lockfile
-  # - yarn install --frozen-lockfile
+  # Install dependencies
+  - pnpm install --frozen-lockfile
 
 #-------------------------------------------------------------------------------
 # Check Agent Verification (Ralph Loop)
@@ -43,5 +40,5 @@ post_create:
 # If configured, Ralph Loop will run these commands - all must pass to allow completion
 # If not configured or empty, trusts agent's completion markers
 verify:
-  # - pnpm lint
-  # - pnpm typecheck
+  - pnpm lint
+  - pnpm typecheck
