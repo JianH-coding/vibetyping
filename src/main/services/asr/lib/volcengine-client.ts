@@ -1,46 +1,235 @@
 /**
- * Volcengine BigModel ASR WebSocket client.
- * Handles streaming speech recognition with Volcengine service.
+ * Volcengine ASR WebSocket Client (V3 BigModel API)
+ * Binary protocol implementation based on: https://www.volcengine.com/docs/6561/1354869
  */
 
 import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 import WebSocket from 'ws';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import * as zlib from 'zlib';
 import log from 'electron-log';
-import type { ASRResult, ASRStatus } from '../../../../shared/types';
-import {
-  type VolcengineClientConfig,
-  type VolcengineMessage,
-  type ConnectionState,
-  volcengineMessageSchema,
-  transcriptionResultPayloadSchema,
-  VOLCENGINE_CONSTANTS,
-} from '../types';
+import type { ASRResult, ASRStatus } from '../../../../shared/types/asr';
+import type { VolcengineClientConfig, ConnectionState } from '../types';
+import { VOLCENGINE_CONSTANTS } from '../types';
 
 const logger = log.scope('volcengine-client');
 
-/**
- * Generate a UUID v4 string.
- */
-function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+// ============ Protocol Constants (V3 BigModel) ============
+
+const PROTOCOL = {
+  VERSION: 0b0001,
+  HEADER_SIZE: 0b0001,
+
+  // Message types
+  MSG_FULL_CLIENT_REQUEST: 0b0001,
+  MSG_AUDIO_ONLY_REQUEST: 0b0010,
+  MSG_FULL_SERVER_RESPONSE: 0b1001,
+  MSG_SERVER_ACK: 0b1011,
+  MSG_SERVER_ERROR: 0b1111,
+
+  // Message type specific flags
+  FLAG_NO_SEQUENCE: 0b0000,
+  FLAG_POS_SEQUENCE: 0b0001,
+  FLAG_NEG_SEQUENCE: 0b0011,
+
+  // Serialization
+  SERIAL_JSON: 0b0001,
+
+  // Compression
+  COMPRESS_NONE: 0b0000,
+  COMPRESS_GZIP: 0b0001,
+};
+
+// ============ Proxy Helper ============
+
+function getProxyAgent(): HttpsProxyAgent<string> | undefined {
+  const proxyUrl =
+    process.env.HTTPS_PROXY ||
+    process.env.https_proxy ||
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy ||
+    process.env.ALL_PROXY ||
+    process.env.all_proxy;
+
+  if (proxyUrl) {
+    logger.info('Using proxy', { proxyUrl });
+    return new HttpsProxyAgent(proxyUrl);
+  }
+  return undefined;
 }
 
-/**
- * Event types emitted by VolcengineClient.
- */
+// ============ Helper Functions ============
+
+function gzipCompress(data: Buffer): Buffer {
+  return zlib.gzipSync(data);
+}
+
+function gzipDecompress(data: Buffer): Buffer {
+  return zlib.gunzipSync(data);
+}
+
+function buildHeader(
+  messageType: number,
+  messageTypeFlags: number,
+  serialization: number,
+  compression: number,
+): Buffer {
+  const header = Buffer.alloc(4);
+  header[0] = (PROTOCOL.VERSION << 4) | PROTOCOL.HEADER_SIZE;
+  header[1] = (messageType << 4) | messageTypeFlags;
+  header[2] = (serialization << 4) | compression;
+  header[3] = 0x00;
+  return header;
+}
+
+function intToBytes(value: number): Buffer {
+  const buf = Buffer.alloc(4);
+  buf.writeInt32BE(value, 0);
+  return buf;
+}
+
+function bytesToInt(buf: Buffer, offset = 0): number {
+  return buf.readInt32BE(offset);
+}
+
+// Build initial request payload (with sequence)
+function buildInitRequest(data: object, sequence: number): Buffer {
+  const header = buildHeader(
+    PROTOCOL.MSG_FULL_CLIENT_REQUEST,
+    PROTOCOL.FLAG_POS_SEQUENCE,
+    PROTOCOL.SERIAL_JSON,
+    PROTOCOL.COMPRESS_GZIP,
+  );
+
+  const jsonStr = JSON.stringify(data);
+  const jsonBuffer = Buffer.from(jsonStr, 'utf-8');
+  const compressedPayload = gzipCompress(jsonBuffer);
+
+  const seqBytes = intToBytes(sequence);
+  const payloadSize = intToBytes(compressedPayload.length);
+
+  return Buffer.concat([header, seqBytes, payloadSize, compressedPayload]);
+}
+
+// Build audio chunk payload (with sequence)
+function buildAudioRequest(
+  audioData: Buffer,
+  sequence: number,
+  isLast: boolean,
+): Buffer {
+  const flag = isLast ? PROTOCOL.FLAG_NEG_SEQUENCE : PROTOCOL.FLAG_POS_SEQUENCE;
+  const header = buildHeader(
+    PROTOCOL.MSG_AUDIO_ONLY_REQUEST,
+    flag,
+    PROTOCOL.SERIAL_JSON,
+    PROTOCOL.COMPRESS_GZIP,
+  );
+
+  // For last packet, sequence is negative
+  const seqValue = isLast ? -sequence : sequence;
+  const seqBytes = intToBytes(seqValue);
+
+  const compressedAudio = gzipCompress(audioData);
+  const payloadSize = intToBytes(compressedAudio.length);
+
+  return Buffer.concat([header, seqBytes, payloadSize, compressedAudio]);
+}
+
+// Parse server response
+interface ParsedResponse {
+  type: 'ack' | 'result' | 'error';
+  sequence: number;
+  text?: string;
+  isFinal?: boolean;
+  error?: string;
+}
+
+function parseResponse(data: Buffer): ParsedResponse | null {
+  if (data.length < 4) return null;
+
+  const messageType = (data[1] >> 4) & 0x0f;
+  const messageFlags = data[1] & 0x0f;
+  const compression = data[2] & 0x0f;
+
+  logger.debug('Parse response', { messageType, messageFlags, compression });
+
+  if (messageType === PROTOCOL.MSG_SERVER_ERROR) {
+    // Error response: header(4) + code(4) + msgSize(4) + message
+    const code = bytesToInt(data, 4);
+    const msgSize = bytesToInt(data, 8);
+    let message = data.slice(12, 12 + msgSize).toString('utf-8');
+    if (compression === PROTOCOL.COMPRESS_GZIP) {
+      message = gzipDecompress(data.slice(12, 12 + msgSize)).toString('utf-8');
+    }
+    logger.error('Server error', { code, message });
+    return {
+      type: 'error',
+      sequence: 0,
+      error: message,
+    };
+  }
+
+  if (messageType === PROTOCOL.MSG_SERVER_ACK) {
+    // ACK response: header(4) + sequence(4) + payloadSize(4) + payload
+    const sequence = bytesToInt(data, 4);
+    logger.debug('Server ACK', { sequence });
+    return { type: 'ack', sequence };
+  }
+
+  if (messageType === PROTOCOL.MSG_FULL_SERVER_RESPONSE) {
+    // Full response: header(4) + sequence(4) + payloadSize(4) + payload
+    const sequence = bytesToInt(data, 4);
+    const payloadSize = bytesToInt(data, 8);
+    const rawPayloadBuf = data.slice(12, 12 + payloadSize);
+    const payloadBuf =
+      compression === PROTOCOL.COMPRESS_GZIP
+        ? gzipDecompress(rawPayloadBuf)
+        : rawPayloadBuf;
+
+    const payloadStr = payloadBuf.toString('utf-8');
+    logger.debug('Server response', { sequence, payload: payloadStr });
+
+    try {
+      const payload = JSON.parse(payloadStr);
+      // Check if this is the final result (negative sequence or NEG_SEQUENCE flag)
+      const isFinal =
+        sequence < 0 || messageFlags === PROTOCOL.FLAG_NEG_SEQUENCE;
+
+      // Extract text from result
+      let text = '';
+      if (payload.result) {
+        text = payload.result.text || '';
+        // If no direct text, try to concatenate utterances
+        if (!text && payload.result.utterances) {
+          text = payload.result.utterances.map((u: { text: string }) => u.text).join('');
+        }
+      }
+
+      return {
+        type: 'result',
+        sequence,
+        text,
+        isFinal,
+      };
+    } catch (e) {
+      logger.error('Failed to parse JSON payload', { error: e });
+      return null;
+    }
+  }
+
+  logger.debug('Unknown message type', { messageType });
+  return null;
+}
+
+// ============ Event Types ============
+
 export interface VolcengineClientEvents {
   result: (result: ASRResult) => void;
   status: (status: ASRStatus) => void;
   error: (error: Error) => void;
 }
 
-/**
- * Type-safe event emitter interface.
- */
 export interface VolcengineClient {
   on<K extends keyof VolcengineClientEvents>(
     event: K,
@@ -56,74 +245,28 @@ export interface VolcengineClient {
   ): boolean;
 }
 
-/**
- * Volcengine BigModel ASR WebSocket client.
- *
- * Handles the WebSocket connection to Volcengine's streaming ASR service,
- * including session management, audio data transmission, and result parsing.
- *
- * @example
- * ```typescript
- * const client = new VolcengineClient({
- *   appId: 'your-app-id',
- *   accessToken: 'your-token',
- *   resourceId: 'volc.bigasr.sauc.duration',
- * });
- *
- * client.on('result', (result) => {
- *   console.log(result.text);
- * });
- *
- * client.on('status', (status) => {
- *   console.log('Status:', status);
- * });
- *
- * client.on('error', (error) => {
- *   console.error('Error:', error);
- * });
- *
- * await client.connect();
- * client.sendAudio(audioBuffer);
- * client.finishAudio();
- * ```
- */
+// ============ ASR Client Class ============
+
 export class VolcengineClient extends EventEmitter {
   private readonly config: VolcengineClientConfig;
   private ws: WebSocket | null = null;
   private connectionState: ConnectionState = 'disconnected';
-  private taskId = '';
-  private connectId = '';
-  private audioIndex = 0;
-  private reconnectAttempts = 0;
-  private reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  private sessionStarted = false;
+  private requestId = '';
+  private sequence = 0;
 
   constructor(config: VolcengineClientConfig) {
     super();
     this.config = config;
   }
 
-  /**
-   * Get current connection status.
-   */
   get isConnected(): boolean {
     return this.connectionState === 'connected' && this.ws?.readyState === WebSocket.OPEN;
   }
 
-  /**
-   * Get current connection state.
-   */
   get state(): ConnectionState {
     return this.connectionState;
   }
 
-  /**
-   * Connect to Volcengine ASR service.
-   * Establishes WebSocket connection and sends session start message.
-   *
-   * @returns Promise that resolves when connection is established and session started
-   * @throws Error if connection fails
-   */
   async connect(): Promise<void> {
     if (this.isConnected) {
       logger.warn('Already connected');
@@ -135,23 +278,29 @@ export class VolcengineClient extends EventEmitter {
     this.emitStatus('connecting');
 
     return new Promise((resolve, reject) => {
-      this.connectId = generateUUID();
-      this.taskId = generateUUID();
-
-      const headers = {
-        'X-Api-App-Key': this.config.appId,
-        'X-Api-Access-Key': this.config.accessToken,
-        'X-Api-Resource-Id': this.config.resourceId,
-        'X-Api-Connect-Id': this.connectId,
-      };
+      this.requestId = randomUUID();
+      this.sequence = 1; // V3 starts with sequence 1
 
       logger.info('Connecting to Volcengine ASR', {
         endpoint: VOLCENGINE_CONSTANTS.ENDPOINT,
-        connectId: this.connectId,
+        requestId: this.requestId,
       });
 
+      const headers: Record<string, string> = {
+        'X-Api-App-Key': this.config.appId,
+        'X-Api-Access-Key': this.config.accessToken,
+        'X-Api-Resource-Id': this.config.resourceId,
+        'X-Api-Connect-Id': this.requestId,
+      };
+
+      const agent = getProxyAgent();
+      const wsOptions: WebSocket.ClientOptions = {
+        headers,
+        ...(agent && { agent }),
+      };
+
       try {
-        this.ws = new WebSocket(VOLCENGINE_CONSTANTS.ENDPOINT, { headers });
+        this.ws = new WebSocket(VOLCENGINE_CONSTANTS.ENDPOINT, wsOptions);
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error('Failed to create WebSocket', { error: err.message });
@@ -175,15 +324,62 @@ export class VolcengineClient extends EventEmitter {
       }, 30000);
 
       this.ws.on('open', () => {
-        logger.info('WebSocket connected', { connectId: this.connectId });
+        logger.info('WebSocket connected', { requestId: this.requestId });
         this.updateState('connected');
-        this.sendStartTranscription();
+
+        // Send initial request with V3 binary format
+        const initRequest = {
+          user: { uid: 'electron_user' },
+          audio: {
+            format: 'pcm',
+            sample_rate: 16000,
+            channel: 1,
+            bits: 16,
+            codec: 'raw',
+          },
+          request: {
+            model_name: 'bigmodel',
+            enable_punc: true,
+            enable_itn: true,
+            enable_ddc: true,
+            show_utterances: true,
+            result_type: 'full',
+          },
+        };
+
+        logger.debug('Sending init request', initRequest);
+        const payload = buildInitRequest(initRequest, this.sequence);
+        this.sequence = 2; // Next sequence for audio
+
+        if (this.ws) {
+          this.ws.send(payload);
+        }
+
+        this.emitStatus('listening');
         clearTimeout(connectionTimeout);
         resolve();
       });
 
       this.ws.on('message', (data: Buffer) => {
         this.handleMessage(data);
+      });
+
+      this.ws.on('unexpected-response', (_request, response) => {
+        logger.error('Unexpected response', { statusCode: response.statusCode });
+
+        let body = '';
+        response.on('data', (chunk: Buffer) => {
+          body += chunk.toString();
+        });
+        response.on('end', () => {
+          logger.error('Response body', { body });
+          const err = new Error(`WebSocket upgrade failed: ${response.statusCode} - ${body}`);
+          clearTimeout(connectionTimeout);
+          this.updateState('error');
+          this.emitStatus('error');
+          this.emit('error', err);
+          reject(err);
+        });
       });
 
       this.ws.on('error', (error: Error) => {
@@ -193,8 +389,6 @@ export class VolcengineClient extends EventEmitter {
 
         if (this.connectionState === 'connecting') {
           reject(error);
-        } else {
-          this.handleDisconnection();
         }
       });
 
@@ -202,368 +396,110 @@ export class VolcengineClient extends EventEmitter {
         logger.info('WebSocket closed', {
           code,
           reason: reason.toString(),
-          connectId: this.connectId,
+          requestId: this.requestId,
         });
         clearTimeout(connectionTimeout);
-        this.handleDisconnection();
+
+        if (this.connectionState !== 'disconnected') {
+          this.updateState('disconnected');
+          this.emitStatus('idle');
+        }
       });
     });
   }
 
-  /**
-   * Disconnect from Volcengine ASR service.
-   * Sends stop message if session is active, then closes connection.
-   */
   disconnect(): void {
-    logger.info('Disconnecting', { connectId: this.connectId });
-    this.cancelReconnect();
-
-    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.sessionStarted) {
-      this.sendStopTranscription();
-    }
-
+    logger.info('Disconnecting', { requestId: this.requestId });
     this.cleanup();
     this.updateState('disconnected');
     this.emitStatus('idle');
   }
 
-  /**
-   * Send audio data to ASR service.
-   * Audio should be PCM 16-bit, 16kHz, Mono format.
-   *
-   * @param chunk - Audio data as ArrayBuffer
-   */
   sendAudio(chunk: ArrayBuffer): void {
-    if (!this.isConnected || !this.sessionStarted) {
-      logger.warn('Cannot send audio: not connected or session not started');
+    if (!this.isConnected) {
+      logger.warn('Cannot send audio: not connected');
       return;
     }
 
-    const base64Audio = this.arrayBufferToBase64(chunk);
-    const message = this.buildMessage(VOLCENGINE_CONSTANTS.MESSAGE_NAMES.AUDIO_DATA, {
-      audio: base64Audio,
-      index: this.audioIndex++,
-      is_end: false,
-    });
+    const audioBuffer = Buffer.from(chunk);
+    const payload = buildAudioRequest(audioBuffer, this.sequence, false);
+    this.sequence++;
 
-    this.sendMessage(message);
+    if (this.ws) {
+      this.ws.send(payload);
+    }
   }
 
-  /**
-   * Signal end of audio stream.
-   * Call this when audio recording is complete to receive final results.
-   */
   finishAudio(): void {
-    if (!this.isConnected || !this.sessionStarted) {
-      logger.warn('Cannot finish audio: not connected or session not started');
+    if (!this.isConnected) {
+      logger.warn('Cannot finish audio: not connected');
       return;
     }
 
-    logger.info('Finishing audio stream', { audioIndex: this.audioIndex });
+    logger.info('Sending finish signal', { sequence: this.sequence });
     this.emitStatus('processing');
 
-    // Send final audio chunk with is_end flag
-    const message = this.buildMessage(VOLCENGINE_CONSTANTS.MESSAGE_NAMES.AUDIO_DATA, {
-      audio: '',
-      index: this.audioIndex++,
-      is_end: true,
-    });
-
-    this.sendMessage(message);
+    // Send final packet with empty audio and negative sequence
+    const payload = buildAudioRequest(Buffer.alloc(0), this.sequence, true);
+    if (this.ws) {
+      this.ws.send(payload);
+    }
   }
 
-  // ============================================================================
-  // Private Methods
-  // ============================================================================
+  // ============ Private Methods ============
 
-  /**
-   * Reset client state for new connection.
-   */
   private reset(): void {
-    this.audioIndex = 0;
-    this.sessionStarted = false;
-    this.taskId = '';
-    this.connectId = '';
+    this.requestId = '';
+    this.sequence = 0;
   }
 
-  /**
-   * Update connection state.
-   */
   private updateState(state: ConnectionState): void {
     this.connectionState = state;
   }
 
-  /**
-   * Emit status change to listeners.
-   */
   private emitStatus(status: ASRStatus): void {
     this.emit('status', status);
   }
 
-  /**
-   * Clean up WebSocket connection.
-   */
   private cleanup(): void {
     if (this.ws) {
       this.ws.removeAllListeners();
-      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
-        this.ws.close();
+      try {
+        if (this.ws.readyState === WebSocket.OPEN) {
+          this.ws.close();
+        }
+      } catch {
+        // Ignore errors when closing
       }
       this.ws = null;
     }
-    this.sessionStarted = false;
   }
 
-  /**
-   * Handle WebSocket disconnection.
-   */
-  private handleDisconnection(): void {
-    this.cleanup();
-
-    if (this.connectionState !== 'disconnected' && this.connectionState !== 'error') {
-      this.updateState('disconnected');
-      this.emitStatus('idle');
-      this.scheduleReconnect();
-    }
-  }
-
-  /**
-   * Schedule reconnection with exponential backoff.
-   */
-  private scheduleReconnect(): void {
-    if (this.reconnectAttempts >= VOLCENGINE_CONSTANTS.RECONNECT.MAX_ATTEMPTS) {
-      logger.error('Max reconnection attempts reached');
-      this.updateState('error');
-      this.emitStatus('error');
-      this.emit('error', new Error('Max reconnection attempts reached'));
-      return;
-    }
-
-    const delay = Math.min(
-      VOLCENGINE_CONSTANTS.RECONNECT.BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts),
-      VOLCENGINE_CONSTANTS.RECONNECT.MAX_DELAY_MS
-    );
-
-    logger.info('Scheduling reconnection', {
-      attempt: this.reconnectAttempts + 1,
-      maxAttempts: VOLCENGINE_CONSTANTS.RECONNECT.MAX_ATTEMPTS,
-      delayMs: delay,
-    });
-
-    this.updateState('reconnecting');
-    this.reconnectAttempts++;
-
-    this.reconnectTimeoutId = setTimeout(async () => {
-      try {
-        await this.connect();
-        this.reconnectAttempts = 0;
-      } catch (error) {
-        logger.error('Reconnection failed', {
-          attempt: this.reconnectAttempts,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }, delay);
-  }
-
-  /**
-   * Cancel pending reconnection.
-   */
-  private cancelReconnect(): void {
-    if (this.reconnectTimeoutId) {
-      clearTimeout(this.reconnectTimeoutId);
-      this.reconnectTimeoutId = null;
-    }
-    this.reconnectAttempts = 0;
-  }
-
-  /**
-   * Send start transcription message.
-   */
-  private sendStartTranscription(): void {
-    const message = this.buildMessage(VOLCENGINE_CONSTANTS.MESSAGE_NAMES.START, {
-      audio: {
-        format: 'pcm',
-        sample_rate: 16000,
-        channel: 1,
-        bits: 16,
-        codec: 'raw',
-      },
-      user: {},
-      request: {
-        model_name: VOLCENGINE_CONSTANTS.MODEL_NAME,
-      },
-    });
-
-    this.sendMessage(message);
-    this.sessionStarted = true;
-    this.emitStatus('listening');
-    logger.info('Started transcription session', { taskId: this.taskId });
-  }
-
-  /**
-   * Send stop transcription message.
-   */
-  private sendStopTranscription(): void {
-    const message = this.buildMessage(VOLCENGINE_CONSTANTS.MESSAGE_NAMES.STOP, {});
-    this.sendMessage(message);
-    logger.info('Sent stop transcription', { taskId: this.taskId });
-  }
-
-  /**
-   * Build a Volcengine protocol message.
-   */
-  private buildMessage(name: string, payload: Record<string, unknown>): VolcengineMessage {
-    return {
-      header: {
-        message_id: generateUUID(),
-        task_id: this.taskId,
-        namespace: VOLCENGINE_CONSTANTS.NAMESPACE,
-        name,
-      },
-      payload,
-    };
-  }
-
-  /**
-   * Send message through WebSocket.
-   */
-  private sendMessage(message: VolcengineMessage): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      logger.warn('Cannot send message: WebSocket not open');
-      return;
-    }
-
-    const json = JSON.stringify(message);
-    this.ws.send(json);
-
-    // Only log non-audio messages to avoid log spam
-    if (message.header.name !== VOLCENGINE_CONSTANTS.MESSAGE_NAMES.AUDIO_DATA) {
-      logger.debug('Sent message', {
-        name: message.header.name,
-        messageId: message.header.message_id,
-      });
-    }
-  }
-
-  /**
-   * Handle incoming WebSocket message.
-   */
   private handleMessage(data: Buffer): void {
-    try {
-      const jsonStr = data.toString('utf-8');
-      const raw = JSON.parse(jsonStr);
+    const response = parseResponse(data);
+    if (!response) return;
 
-      const parseResult = volcengineMessageSchema.safeParse(raw);
-      if (!parseResult.success) {
-        logger.warn('Invalid message format', {
-          error: parseResult.error.issues[0]?.message,
-        });
-        return;
-      }
-
-      const message = parseResult.data;
-      logger.debug('Received message', {
-        name: message.header.name,
-        status: message.header.status,
-      });
-
-      this.processMessage(message);
-    } catch (error) {
-      logger.error('Failed to parse message', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  /**
-   * Process parsed Volcengine message.
-   */
-  private processMessage(message: VolcengineMessage): void {
-    const { name, status, status_message } = message.header;
-
-    // Check for error status
-    if (status !== undefined && status !== 0 && status !== 20000000) {
-      const errorMsg = status_message ?? `Error status: ${status}`;
-      logger.error('Server error', { status, message: errorMsg });
-      this.emit('error', new Error(errorMsg));
-      return;
-    }
-
-    switch (name) {
-      case VOLCENGINE_CONSTANTS.MESSAGE_NAMES.TRANSCRIPTION_RESULT_CHANGED:
-        this.handleTranscriptionResult(message, false);
-        break;
-
-      case VOLCENGINE_CONSTANTS.MESSAGE_NAMES.TRANSCRIPTION_COMPLETED:
-        this.handleTranscriptionResult(message, true);
-        this.emitStatus('done');
-        break;
-
-      case VOLCENGINE_CONSTANTS.MESSAGE_NAMES.TASK_FAILED:
-        logger.error('Task failed', { payload: message.payload });
-        this.emit('error', new Error(status_message ?? 'Task failed'));
-        this.emitStatus('error');
-        break;
-
-      default:
-        logger.debug('Unhandled message type', { name });
-    }
-  }
-
-  /**
-   * Handle transcription result message.
-   */
-  private handleTranscriptionResult(message: VolcengineMessage, isFinal: boolean): void {
-    const payloadResult = transcriptionResultPayloadSchema.safeParse(message.payload);
-
-    if (!payloadResult.success) {
-      logger.warn('Invalid transcription result payload', {
-        error: payloadResult.error.issues[0]?.message,
-      });
-      return;
-    }
-
-    const payload = payloadResult.data;
-    const result = payload.result;
-
-    if (!result) {
-      return;
-    }
-
-    // Extract text from result
-    let text = result.text ?? '';
-
-    // If no direct text, try to concatenate sentences
-    if (!text && result.sentences) {
-      text = result.sentences.map((s) => s.text).join('');
-    }
-
-    if (text) {
-      const asrResult: ASRResult = {
-        type: isFinal ? 'final' : 'interim',
-        text,
-        isFinal,
+    if (response.type === 'error' && response.error) {
+      this.emit('error', new Error(response.error));
+      this.emitStatus('error');
+    } else if (response.type === 'result' && response.text !== undefined) {
+      const result: ASRResult = {
+        type: response.isFinal ? 'final' : 'interim',
+        text: response.text,
+        isFinal: response.isFinal ?? false,
       };
 
       logger.debug('ASR result', {
-        type: asrResult.type,
-        textLength: text.length,
+        type: result.type,
+        textLength: result.text.length,
       });
 
-      this.emit('result', asrResult);
-    }
-  }
+      this.emit('result', result);
 
-  /**
-   * Convert ArrayBuffer to base64 string.
-   */
-  private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
+      if (response.isFinal) {
+        this.emitStatus('done');
+      }
     }
-    return Buffer.from(binary, 'binary').toString('base64');
+    // ACK messages are just logged, no event emitted
   }
 }
