@@ -32,6 +32,7 @@
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^11.0.0",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
@@ -44,12 +45,22 @@
   },
   "dependencies": {
     "@xitanggg/node-insert-text": "^1.5.1",
+    "dotenv": "^17.2.3",
     "electron-log": "^5.4.3",
     "electron-squirrel-startup": "^1.0.1",
+    "https-proxy-agent": "^7.0.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "uiohook-napi": "^1.5.4",
+    "uuid": "^13.0.0",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "uiohook-napi"
+    ]
   }
 }
