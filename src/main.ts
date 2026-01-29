@@ -1,8 +1,10 @@
+import 'dotenv/config';
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { setupAllIpcHandlers } from './main/ipc';
 import { floatingWindow } from './main/windows';
+import { pushToTalkService } from './main/services';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -36,6 +38,9 @@ const createWindow = () => {
 
   // Create the floating window (hidden initially)
   floatingWindow.create();
+
+  // Initialize push-to-talk service after windows are created
+  pushToTalkService.initialize();
 };
 
 // This method will be called when Electron has finished
@@ -50,6 +55,26 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Cleanup function for graceful shutdown
+function cleanup(): void {
+  pushToTalkService.dispose();
+  floatingWindow.destroy();
+}
+
+// Clean up before quitting
+app.on('before-quit', cleanup);
+
+// Handle SIGINT (Ctrl+C) and SIGTERM for graceful shutdown
+process.on('SIGINT', () => {
+  cleanup();
+  app.quit();
+});
+
+process.on('SIGTERM', () => {
+  cleanup();
+  app.quit();
 });
 
 app.on('activate', () => {

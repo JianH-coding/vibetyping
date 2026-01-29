@@ -26,3 +26,19 @@ export type {
   VolcengineClientConfig,
   ConnectionState,
 } from './asr';
+
+// Keyboard Service
+export { KeyboardService, keyboardService } from './keyboard';
+export type { KeyboardConfig } from './keyboard';
+
+// Text Input Service
+export { TextInputService, textInputService } from './text-input';
+export type { TextInsertResult } from './text-input';
+
+// Permissions Service
+export { PermissionsService, permissionsService } from './permissions';
+export type { PermissionStatus, PermissionType, MediaAccessStatus } from './permissions';
+
+// Push-to-Talk Service
+export { PushToTalkService, pushToTalkService } from './push-to-talk';
+export type { PushToTalkConfig } from './push-to-talk';
