@@ -66,7 +66,6 @@ cp -r ../old-project/electron-doc ./
 
 ### 技术架构
 
-```
 ┌─────────────────────────────────────────────────────────────┐
 │                      用户操作                                │
 │  按住 Right Option / 蓝牙遥控器                              │
@@ -123,3 +122,7 @@ cp -r ../old-project/electron-doc ./
 ## prompt6
 
 帮我归档完成的项目
+
+## prompt7
+
+ok了,然后在帮我创建一个完整制作 open-typeless 的task
