@@ -1,5 +1,11 @@
 # Open Typeless
 
+> 🌳 **This project is a showcase for the [Trellis](https://github.com/mindfold-ai/Trellis) framework.**
+>
+> 🌳 **本项目是 [Trellis](https://github.com/mindfold-ai/Trellis) 框架的示例项目。**
+
+---
+
 macOS 语音输入工具，按住快捷键说话，松开自动将文字插入到光标位置。
 
 ## 功能特性
