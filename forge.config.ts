@@ -23,6 +23,7 @@ const config: ForgeConfig = {
     asar: {
       unpack: '*.{node,dll}',
     },
+    extraResource: ['assets'],
   },
   rebuildConfig: {
     force: true,

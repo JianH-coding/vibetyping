@@ -19,6 +19,8 @@ export interface ASRResult {
   type: 'interim' | 'final';
   text: string;
   isFinal: boolean;
+  /** Whether the text has been optimized by LLM */
+  isOptimized?: boolean;
 }
 
 /**
@@ -27,6 +29,7 @@ export interface ASRResult {
  * - connecting: Establishing connection to ASR service
  * - listening: Actively listening for audio
  * - processing: Processing final audio
+ * - llm_optimizing: LLM optimization in progress
  * - done: Recognition complete
  * - error: An error occurred
  */
@@ -35,6 +38,7 @@ export type ASRStatus =
   | 'connecting'
   | 'listening'
   | 'processing'
+  | 'llm_optimizing'
   | 'done'
   | 'error';
 

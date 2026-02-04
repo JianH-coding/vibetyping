@@ -1,11 +1,15 @@
 /**
  * Permissions Service.
- * Handles macOS system permission checks and prompts.
+ * Handles system permission checks and prompts for different platforms.
  *
  * Required permissions for Push-to-Talk:
- * - Input Monitoring: For global keyboard hooks (uiohook-napi)
- * - Accessibility: For text insertion (node-insert-text)
- * - Microphone: For audio recording (handled by renderer)
+ * - macOS:
+ *   - Input Monitoring: For global keyboard hooks (uiohook-napi)
+ *   - Accessibility: For text insertion (node-insert-text)
+ *   - Microphone: For audio recording (handled by renderer)
+ * - Windows:
+ *   - Microphone: For audio recording (handled by renderer)
+ *   - May require administrator privileges for text insertion
  */
 
 import { systemPreferences, shell } from 'electron';
@@ -139,10 +143,24 @@ export class PermissionsService {
 
   /**
    * Open system settings to the specified permission page.
+   * On non-macOS platforms, provides guidance instead of opening settings.
    *
    * @param type - Permission type to open settings for
    */
   openSettings(type: PermissionType): void {
+    if (process.platform !== 'darwin') {
+      logger.info(`On ${process.platform}, permission settings are platform-specific.`);
+
+      if (type === 'microphone') {
+        logger.info('On Windows, configure microphone permissions in Settings > Privacy & security > Microphone');
+      } else if (type === 'accessibility') {
+        logger.info('On Windows, text insertion may require administrator privileges or running as administrator.');
+      } else if (type === 'inputMonitoring') {
+        logger.info('On Windows, global keyboard hooks may require specific permissions or running as administrator.');
+      }
+      return;
+    }
+
     const url = SETTINGS_URLS[type];
     logger.info('Opening permission settings', { type, url });
 
@@ -157,20 +175,29 @@ export class PermissionsService {
    */
   logPermissionStatus(): void {
     const status = this.checkPermissions();
-    logger.info('Current permission status', status);
+    logger.info('Current permission status', { ...status, platform: process.platform });
 
-    if (!status.allGranted) {
-      logger.warn('Missing permissions detected');
+    if (process.platform === 'darwin') {
+      if (!status.allGranted) {
+        logger.warn('Missing permissions detected');
 
-      if (status.microphone !== 'granted') {
-        logger.warn('- Microphone: Not granted. Enable in System Settings > Privacy & Security > Microphone');
+        if (status.microphone !== 'granted') {
+          logger.warn('- Microphone: Not granted. Enable in System Settings > Privacy & Security > Microphone');
+        }
+
+        if (!status.accessibility) {
+          logger.warn('- Accessibility: Not granted. Enable in System Settings > Privacy & Security > Accessibility');
+        }
+
+        logger.warn('- Input Monitoring: Cannot check programmatically. Enable in System Settings > Privacy & Security > Input Monitoring');
       }
-
-      if (!status.accessibility) {
-        logger.warn('- Accessibility: Not granted. Enable in System Settings > Privacy & Security > Accessibility');
-      }
-
-      logger.warn('- Input Monitoring: Cannot check programmatically. Enable in System Settings > Privacy & Security > Input Monitoring');
+    } else if (process.platform === 'win32') {
+      logger.info('Windows permission notes:');
+      logger.info('- Microphone: Check Windows Settings > Privacy & security > Microphone');
+      logger.info('- Text insertion: May require running as administrator for some applications');
+      logger.info('- Global keyboard hooks: May require specific permissions for uiohook-napi');
+    } else {
+      logger.info(`Platform ${process.platform}: Permissions may vary. Check system settings for microphone and input permissions.`);
     }
   }
 }

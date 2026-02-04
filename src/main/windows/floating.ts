@@ -3,7 +3,8 @@
  * Manages the ASR status floating window that displays recording state and transcription.
  */
 
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, screen, app } from 'electron';
+import fs from 'fs';
 import path from 'node:path';
 import type { ASRResult, ASRStatus } from '../../shared/types/asr';
 import { IPC_CHANNELS } from '../../shared/constants/channels';
@@ -63,6 +64,7 @@ export class FloatingWindowManager {
    * The window is created hidden and shown when needed.
    */
   create(): void {
+    console.error('=== FloatingWindow.create() called ===');
     if (this.window) {
       return;
     }
@@ -75,7 +77,14 @@ export class FloatingWindowManager {
     const x = Math.round((screenWidth - FLOATING_WINDOW_CONFIG.WIDTH) / 2);
     const y = screenHeight - FLOATING_WINDOW_CONFIG.MIN_HEIGHT - FLOATING_WINDOW_CONFIG.BOTTOM_OFFSET;
 
-    this.window = new BrowserWindow({
+    // Floating window icon path
+    const floatingIconPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'assets', 'tray-icon-32.png')
+      : path.join(__dirname, '..', '..', 'assets', 'tray-icon-32.png');
+    console.log('Floating window icon path:', floatingIconPath);
+    console.log('Floating window icon exists:', fs.existsSync(floatingIconPath) ? 'Yes' : 'No');
+
+    const windowOptions: Electron.BrowserWindowConstructorOptions = {
       width: FLOATING_WINDOW_CONFIG.WIDTH,
       height: FLOATING_WINDOW_CONFIG.MIN_HEIGHT,
       x,
@@ -88,18 +97,24 @@ export class FloatingWindowManager {
       movable: false, // Fixed position at bottom center
       show: false,
       hasShadow: false,
+      icon: floatingIconPath,
       // CRITICAL: Prevent window from stealing focus
       // This allows text insertion to work in the previously focused app
       focusable: false,
-      // macOS native vibrancy effect (popover style)
-      vibrancy: 'popover',
       fullscreenable: false,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
       },
-    });
+    };
+
+    // Add vibrancy effect only on macOS (not supported on Windows/Linux)
+    if (process.platform === 'darwin') {
+      windowOptions.vibrancy = 'popover';
+    }
+
+    this.window = new BrowserWindow(windowOptions);
 
     // Make window visible on all workspaces (macOS/Linux)
     // This must be called after window creation
@@ -117,6 +132,15 @@ export class FloatingWindowManager {
         path.join(__dirname, `../renderer/${FLOATING_WINDOW_VITE_NAME}/floating.html`),
       );
     }
+
+    // Handle load errors
+    this.window.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      console.error('Floating window failed to load:', {
+        errorCode,
+        errorDescription,
+        url: FLOATING_WINDOW_VITE_DEV_SERVER_URL || 'file'
+      });
+    });
 
     // Prevent the window from being closed, just hide it
     this.window.on('close', (event) => {
@@ -184,7 +208,7 @@ export class FloatingWindowManager {
     }
 
     // Show window for active statuses
-    if (status === 'connecting' || status === 'listening' || status === 'processing') {
+    if (status === 'connecting' || status === 'listening' || status === 'processing' || status === 'llm_optimizing') {
       this.show();
     }
 
@@ -227,6 +251,21 @@ export class FloatingWindowManager {
     this.show();
     this.window.webContents.send(IPC_CHANNELS.ASR.ERROR, error);
     // Auto-hide after showing error
+    this.scheduleAutoHide();
+  }
+
+  /**
+   * Send warning message to the floating window.
+   * @param warning - The warning message
+   */
+  sendWarning(warning: string): void {
+    if (!this.window || this.window.isDestroyed()) {
+      return;
+    }
+    // Show window to display warning
+    this.show();
+    this.window.webContents.send(IPC_CHANNELS.ASR.WARNING, warning);
+    // Auto-hide after showing warning
     this.scheduleAutoHide();
   }
 

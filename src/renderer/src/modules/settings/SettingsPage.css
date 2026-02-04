@@ -1,0 +1,490 @@
+/**
+ * Settings Page Styles
+ * Styles for the main window settings page.
+ */
+
+/* ============================================
+ * Reset and Base Styles
+ * ============================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  background: #f5f5f7;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+  color: #1d1d1f;
+  overflow: hidden;
+}
+
+/* ============================================
+ * Settings Container
+ * ============================================ */
+
+.settings-container {
+  height: 100vh;
+  display: flex;
+  background: #f5f5f7;
+}
+
+.settings-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* ============================================
+ * Left Sidebar
+ * ============================================ */
+
+.settings-sidebar {
+  width: 220px;
+  background: #f8f8fa;
+  border-right: 1px solid #e5e5e7;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 0;
+}
+
+.sidebar-header {
+  padding: 0 20px 20px;
+  border-bottom: 1px solid #e5e5e7;
+  margin-bottom: 16px;
+}
+
+.sidebar-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+.tab-button {
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 400;
+  color: #6e6e73;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.tab-button:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: #1d1d1f;
+}
+
+.tab-button.active {
+  background: #007aff;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* ============================================
+ * Right Content Area
+ * ============================================ */
+
+.settings-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* Prevent flex item from overflowing */
+}
+
+.content-header {
+  padding: 24px 32px;
+  border-bottom: 1px solid #e5e5e7;
+  background: #ffffff;
+}
+
+.content-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #1d1d1f;
+}
+
+.content-body {
+  flex: 1;
+  padding: 32px;
+  overflow-y: auto;
+  background: #ffffff;
+}
+
+.content-footer {
+  padding: 24px 32px;
+  border-top: 1px solid #e5e5e7;
+  background: #fafafc;
+}
+
+/* ============================================
+ * Settings Form
+ * ============================================ */
+
+.settings-form {
+  max-width: 600px;
+}
+
+.form-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin-bottom: 8px;
+}
+
+.form-description {
+  font-size: 14px;
+  color: #6e6e73;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.form-group {
+  margin-bottom: 24px;
+}
+
+.form-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1d1d1f;
+  margin-bottom: 8px;
+}
+
+.form-hint {
+  font-size: 13px;
+  font-weight: 400;
+  color: #8e8e93;
+  margin-left: 4px;
+}
+
+.form-input {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #1d1d1f;
+  background: #f8f8fa;
+  border: 1px solid #c7c7cc;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #007aff;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+.form-input::placeholder {
+  color: #8e8e93;
+}
+
+/* ============================================
+ * Buttons
+ * ============================================ */
+
+.button-group {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.btn {
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #007aff;
+  color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0056cc;
+}
+
+.btn-secondary {
+  background: #e5e5e7;
+  color: #1d1d1f;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #d1d1d6;
+}
+
+/* ============================================
+ * Status Messages
+ * ============================================ */
+
+.status-messages {
+  min-height: 24px;
+}
+
+.status-message {
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  animation: fadeIn 0.3s ease;
+}
+
+.status-message.success {
+  background: #d1f7c4;
+  color: #1f7c1f;
+  border: 1px solid #a8e6a8;
+}
+
+.status-message.error {
+  background: #ffe6e6;
+  color: #d32f2f;
+  border: 1px solid #ffb3b3;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================
+ * Loading State
+ * ============================================ */
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 16px;
+  color: #6e6e73;
+}
+
+/* ============================================
+ * Responsive Adjustments
+ * ============================================ */
+
+@media (max-width: 768px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #e5e5e7;
+    padding: 16px 0;
+  }
+
+  .tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0 16px;
+  }
+
+  .tab-button {
+    white-space: nowrap;
+  }
+
+  .content-header,
+  .content-body,
+  .content-footer {
+    padding: 20px;
+  }
+
+  .button-group {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+  }
+}
+
+/* ============================================
+ * Keyboard Settings Specific Styles
+ * ============================================ */
+
+.form-help {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #6e6e73;
+  line-height: 1.5;
+  background: #f8f8fa;
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 3px solid #007aff;
+}
+
+.form-help p {
+  margin-bottom: 8px;
+}
+
+.form-help p:last-child {
+  margin-bottom: 0;
+}
+
+.form-subtitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin-bottom: 12px;
+}
+
+.key-info {
+  background: #f8f8fa;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #e5e5e7;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.key-info p {
+  margin-bottom: 8px;
+}
+
+.key-info p:last-child {
+  margin-bottom: 0;
+}
+
+.key-info code {
+  background: #e5e5e7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+}
+
+.form-notes {
+  padding-left: 20px;
+  font-size: 13px;
+  color: #6e6e73;
+  line-height: 1.5;
+}
+
+.form-notes li {
+  margin-bottom: 8px;
+}
+
+.form-notes li:last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================
+ * LLM Settings Specific Styles
+ * ============================================ */
+
+.form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.form-toggle {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+}
+
+.toggle-input {
+  opacity: 0;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  cursor: pointer;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #c7c7cc;
+  transition: .4s;
+  border-radius: 28px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+.toggle-input:checked + .toggle-slider {
+  background-color: #007aff;
+}
+
+.toggle-input:checked + .toggle-slider:before {
+  transform: translateX(24px);
+}
+
+.toggle-input:disabled + .toggle-slider {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.form-textarea {
+  min-height: 100px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.form-input:disabled {
+  background-color: #f0f0f0;
+  color: #8e8e93;
+  cursor: not-allowed;
+  border-color: #d1d1d6;
+}
+
+.form-input:disabled::placeholder {
+  color: #c7c7cc;
+}

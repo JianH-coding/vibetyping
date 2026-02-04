@@ -14,12 +14,32 @@
 export function float32ToInt16(float32Array: Float32Array): Int16Array {
   const int16Array = new Int16Array(float32Array.length);
 
+  // Debug: check input data
+  if (float32Array.length > 0) {
+    console.log('[PCM Converter] float32ToInt16:', {
+      inputLength: float32Array.length,
+      firstSample: float32Array[0],
+      minSample: Math.min(...float32Array),
+      maxSample: Math.max(...float32Array)
+    });
+  }
+
   for (let i = 0; i < float32Array.length; i++) {
     // Clamp value to [-1.0, 1.0] range
     const sample = Math.max(-1, Math.min(1, float32Array[i]));
     // Convert to 16-bit integer range
     // Use 0x7fff (32767) instead of 0x8000 (32768) to avoid overflow
     int16Array[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+  }
+
+  // Debug: check output data
+  if (int16Array.length > 0) {
+    console.log('[PCM Converter] float32ToInt16 output:', {
+      outputLength: int16Array.length,
+      firstSample: int16Array[0],
+      minSample: Math.min(...int16Array),
+      maxSample: Math.max(...int16Array)
+    });
   }
 
   return int16Array;

@@ -4,6 +4,8 @@
  */
 
 import type { ASRConfig, ASRResult, ASRStatus } from '../shared/types/asr';
+import type { EnvConfig } from '../shared/types/settings';
+import type { LLMConfig, LLMRequestOptions } from '../main/services/llm/types';
 
 /**
  * ASR API interface exposed via contextBridge.
@@ -70,11 +72,76 @@ interface FloatingWindowApi {
 }
 
 /**
+ * Settings API interface exposed via contextBridge.
+ */
+interface SettingsApi {
+  /**
+   * Get current environment configuration.
+   */
+  getEnvConfig: () => Promise<EnvConfig>;
+
+  /**
+   * Update environment configuration.
+   * @param config - New environment configuration
+   */
+  updateEnvConfig: (config: EnvConfig) => Promise<void>;
+
+  /**
+   * Apply default configuration from .env.example.
+   */
+  applyDefaultConfig: () => Promise<void>;
+}
+
+/**
+ * LLM API interface exposed via contextBridge.
+ */
+interface LLMApi {
+  /**
+   * Test LLM connection.
+   */
+  testConnection: () => Promise<{
+    success: boolean;
+    message: string;
+    details?: any;
+  }>;
+
+  /**
+   * Get LLM configuration.
+   */
+  getConfig: () => Promise<LLMConfig>;
+
+  /**
+   * Update LLM configuration.
+   * @param config - New LLM configuration
+   */
+  updateConfig: (config: Partial<LLMConfig>) => Promise<void>;
+
+  /**
+   * Optimize text with LLM.
+   * @param text - Text to optimize
+   * @param options - Request options
+   */
+  optimizeText: (text: string, options?: LLMRequestOptions) => Promise<{
+    success: boolean;
+    text: string;
+    error?: string;
+    processingTime?: number;
+  }>;
+
+  /**
+   * Reload LLM configuration from environment.
+   */
+  reloadConfig: () => Promise<void>;
+}
+
+/**
  * Application API exposed to the renderer process.
  */
 interface AppApi {
   asr: ASRApi;
   floatingWindow: FloatingWindowApi;
+  settings: SettingsApi;
+  llm: LLMApi;
 }
 
 declare global {

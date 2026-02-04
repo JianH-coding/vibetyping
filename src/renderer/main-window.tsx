@@ -1,14 +1,21 @@
 /**
  * Main window renderer process.
- * Handles automatic audio recording when ASR status changes.
+ * Renders the settings page for the application and handles audio recording.
  */
 
-import './index.css';
-import { AudioRecorder } from './renderer/src/modules/asr';
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import { SettingsPage } from './src/modules/settings/SettingsPage';
+import { AudioRecorder } from './src/modules/asr';
+import '../index.css';
 
 console.log(
-  '👋 This message is being logged by "renderer.ts", included via Vite',
+  '👋 Main window renderer loaded',
 );
+
+// ============================================================================
+// Audio Recording Logic (from src/renderer.ts)
+// ============================================================================
 
 // Debug: check if window.api is available
 console.log('[Renderer] Checking if window.api is available...');
@@ -35,6 +42,7 @@ function initRecorder(): AudioRecorder {
   return new AudioRecorder(
     (chunk) => {
       // Send audio chunk to main process via IPC
+      console.log('[Renderer] Sending audio chunk to main process:', chunk.byteLength, 'bytes');
       window.api.asr.sendAudio(chunk);
     },
     (state) => {
@@ -107,8 +115,6 @@ window.addEventListener('beforeunload', () => {
     recorder = null;
   }
 });
-
-console.log('[Renderer] Auto-recording initialized, waiting for ASR status...');
 
 // ============================================================================
 // Debug Functions (available in console via testAudioRecording())
@@ -190,3 +196,19 @@ async function testAudioRecording() {
 // 暴露给控制台
 (window as any).testAudioRecording = testAudioRecording;
 console.log('[Renderer] 调试函数已加载: testAudioRecording()');
+console.log('[Renderer] Auto-recording initialized, waiting for ASR status...');
+
+// ============================================================================
+// React App Rendering
+// ============================================================================
+
+// Get the root element
+const rootElement = document.getElementById('root');
+
+if (!rootElement) {
+  throw new Error('Root element not found. Make sure there is a div with id="root" in the HTML.');
+}
+
+// Create root and render
+const root = createRoot(rootElement);
+root.render(React.createElement(SettingsPage));

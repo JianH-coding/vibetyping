@@ -9,3 +9,7 @@ export type {
   ASRStatus,
   AudioChunk,
 } from './asr';
+
+export type {
+  EnvConfig,
+} from './settings';

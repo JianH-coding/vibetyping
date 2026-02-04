@@ -120,14 +120,18 @@ export class AudioRecorder {
    * @returns Promise that resolves when recording starts, or rejects on error
    */
   public async start(): Promise<void> {
+    console.log('[AudioRecorder] start() called, current state:', this.state);
+
     // Check if already recording
     if (this.state.isRecording) {
+      console.log('[AudioRecorder] Already recording, returning');
       this.setState({ error: AUDIO_ERRORS.ALREADY_RECORDING });
       return;
     }
 
     // Clear any previous error
     this.setState({ error: null });
+    console.log('[AudioRecorder] Previous error cleared');
 
     try {
       // Check for AudioContext support
@@ -141,6 +145,14 @@ export class AudioRecorder {
       }
 
       // Request microphone access with audio constraints
+      console.log('[AudioRecorder] Requesting microphone access with constraints:', {
+        sampleRate: AUDIO_CONFIG.sampleRate,
+        channelCount: AUDIO_CONFIG.channelCount,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      });
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: AUDIO_CONFIG.sampleRate,
@@ -151,10 +163,36 @@ export class AudioRecorder {
         },
       });
 
+      console.log('[AudioRecorder] Microphone access granted, stream:', {
+        id: stream.id,
+        active: stream.active,
+        tracks: stream.getTracks().map(t => ({
+          kind: t.kind,
+          label: t.label,
+          enabled: t.enabled,
+          muted: t.muted,
+          readyState: t.readyState
+        }))
+      });
+
       // Create AudioContext with desired sample rate
       const audioContext = new AudioContextClass({
         sampleRate: AUDIO_CONFIG.sampleRate,
       });
+
+      console.log('[AudioRecorder] AudioContext created:', {
+        state: audioContext.state,
+        sampleRate: audioContext.sampleRate,
+        baseLatency: audioContext.baseLatency,
+        outputLatency: audioContext.outputLatency
+      });
+
+      // Ensure AudioContext is running
+      if (audioContext.state === 'suspended') {
+        console.log('[AudioRecorder] AudioContext is suspended, attempting to resume...');
+        await audioContext.resume();
+        console.log('[AudioRecorder] AudioContext resumed, new state:', audioContext.state);
+      }
 
       // Create source node from media stream
       const sourceNode = audioContext.createMediaStreamSource(stream);
@@ -176,8 +214,21 @@ export class AudioRecorder {
         // Get audio data from input buffer (channel 0 = mono)
         const inputData = event.inputBuffer.getChannelData(0);
 
+        // Debug: log audio data info
+        console.log('[AudioRecorder] Audio process callback:', {
+          sampleCount: inputData.length,
+          firstSample: inputData.length > 0 ? inputData[0] : null,
+          hasData: inputData.length > 0
+        });
+
         // Convert Float32 audio to PCM 16-bit ArrayBuffer
         const pcmBuffer = float32ToArrayBuffer(inputData);
+
+        // Debug: log PCM buffer info
+        console.log('[AudioRecorder] PCM buffer created:', {
+          byteLength: pcmBuffer.byteLength,
+          hasData: pcmBuffer.byteLength > 0
+        });
 
         // Send chunk to callback
         onChunk(pcmBuffer);
@@ -197,10 +248,25 @@ export class AudioRecorder {
         processorNode,
       };
 
+      console.log('[AudioRecorder] Resources created and connected:', {
+        audioContextState: audioContext.state,
+        sampleRate: audioContext.sampleRate,
+        hasSourceNode: !!sourceNode,
+        hasProcessorNode: !!processorNode
+      });
+
       this.setState({ isRecording: true });
+      console.log('[AudioRecorder] Recording started successfully');
     } catch (err) {
+      console.error('[AudioRecorder] Error in start():', err);
+
       // Handle specific error types
       if (err instanceof DOMException) {
+        console.error('[AudioRecorder] DOMException:', {
+          name: err.name,
+          message: err.message,
+          code: err.code
+        });
         switch (err.name) {
           case 'NotAllowedError':
           case 'PermissionDeniedError':
@@ -214,8 +280,10 @@ export class AudioRecorder {
             this.setState({ error: `Microphone error: ${err.message}` });
         }
       } else if (err instanceof Error) {
+        console.error('[AudioRecorder] Error:', err.message, err.stack);
         this.setState({ error: `Failed to start recording: ${err.message}` });
       } else {
+        console.error('[AudioRecorder] Unknown error:', err);
         this.setState({
           error: 'An unknown error occurred while starting recording',
         });

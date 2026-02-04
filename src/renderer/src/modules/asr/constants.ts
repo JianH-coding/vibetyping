@@ -14,7 +14,7 @@ export const AUDIO_CONFIG = {
   /** Bits per sample for PCM encoding */
   bitsPerSample: 16,
   /** ScriptProcessorNode buffer size (must be power of 2) */
-  bufferSize: 4096,
+  bufferSize: 1024,
   /** Target interval between audio chunks in milliseconds */
   chunkInterval: 100,
 } as const;
