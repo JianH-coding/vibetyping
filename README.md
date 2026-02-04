@@ -1,30 +1,39 @@
-# Open Typeless
-
-> **This project is a showcase for the [Trellis](https://github.com/mindfold-ai/Trellis) framework.**
->
-> **本项目是 [Trellis](https://github.com/mindfold-ai/Trellis) 框架的示例项目。**
+# VibeTyping
 
 ---
 
-macOS 语音输入工具，按住快捷键说话，松开自动将文字插入到光标位置。
+Windows & macOS 跨平台 语音输入工具，按住快捷键说话，松开自动将文字插入到光标位置。
 
 ## 功能特性
 
-- 🎤 **Push-to-Talk** - 按住右 Option 键说话，松开自动输入
+- 🎤 **Push-to-Talk** - 按住右 Option/CTRL 键说话，松开自动输入
 - ⚡ **实时转录** - 基于火山引擎大模型，流式显示识别结果
 - 🪟 **悬浮窗显示** - 毛玻璃效果，显示录音状态和转录文字
 - 🎯 **光标插入** - 自动将文字插入到当前光标位置，无需切换窗口
 - 🔒 **不抢焦点** - 悬浮窗不会打断你的工作流
+- 🌐 **跨平台支持** - 同时支持 macOS 和 Windows 系统
+- 🛠️ **开源免费** - 完全开源，免费使用和修改
+- 🤖 **LLM 优化** - 支持大语言模型优化输入内容
 
 ## 系统要求
 
-- macOS 12.0+
+- macOS 12.0+ / Windows 10+
 - Node.js 18+
 - pnpm
 
 ## 快速开始
 
 ### 1. 安装依赖
+
+安装[Node.js](https://nodejs.org/en/)
+
+打开命令行，安装pnpm：
+
+```bash
+npm install -g pnpm
+```
+
+在项目文件夹打开命令行，安装项目依赖：
 
 ```bash
 pnpm install
@@ -44,7 +53,7 @@ cp .env.example .env
 # 火山引擎豆包语音识别配置
 VOLCENGINE_APP_ID=你的APP_ID
 VOLCENGINE_ACCESS_TOKEN=你的Access_Token
-VOLCENGINE_RESOURCE_ID=volc.bigasr.sauc
+VOLCENGINE_RESOURCE_ID=volc.bigasr.sauc.duration
 ```
 
 ### 3. 获取火山引擎配置
@@ -54,8 +63,8 @@ VOLCENGINE_RESOURCE_ID=volc.bigasr.sauc
 3. 创建应用，获取 `APP_ID`
 4. 在「流式语音识别大模型」页面，点击眼睛图标获取 `Access Token`
 5. Resource ID 可选：
-   - `volc.bigasr.sauc` - 大模型 1.0 流式识别
-   - `volc.seedasr.sauc` - 大模型 2.0 流式识别 (推荐)
+   - `volc.bigasr.sauc.duration` - 大模型 1.0 流式识别
+   - `volc.seedasr.sauc.duration` - 大模型 2.0 流式识别 (推荐)
 
 ### 4. 启动应用
 
@@ -75,7 +84,7 @@ pnpm start
 ## 使用方法
 
 1. 启动应用后，会在后台运行
-2. 在任意应用中，**按住右 Option 键**开始录音
+2. 在任意应用中，**按住右 Option / CTRL 键**开始录音
 3. 悬浮窗会显示 "Listening..." 和实时转录的文字
 4. **松开按键**，文字会自动插入到当前光标位置
 5. 悬浮窗会在 2 秒后自动隐藏
@@ -89,14 +98,33 @@ src/
 ├── renderer.ts            # 渲染进程入口
 ├── main/
 │   ├── ipc/               # IPC 处理器
+│   │   ├── asr.handler.ts           # ASR 相关 IPC 处理
+│   │   ├── llm.handler.ts           # LLM 优化相关 IPC 处理
+│   │   ├── floating-window.handler.ts  # 悬浮窗 IPC 处理
+│   │   ├── settings.handler.ts      # 设置相关 IPC 处理
+│   │   └── index.ts                 # IPC 处理器注册
 │   ├── services/          # 主进程服务
 │   │   ├── asr/           # 火山引擎 ASR 客户端
+│   │   ├── llm/           # 大语言模型服务
 │   │   ├── keyboard/      # 全局键盘监听
-│   │   └── push-to-talk/  # Push-to-Talk 协调服务
+│   │   ├── push-to-talk/  # Push-to-Talk 协调服务
+│   │   ├── text-input/    # 文字插入服务
+│   │   └── permissions/   # 系统权限管理
 │   └── windows/           # 窗口管理
+│       ├── floating.ts    # 悬浮窗
+│       └── index.ts       # 窗口导出
 ├── renderer/
-│   └── src/modules/asr/   # ASR 相关 React 组件
+│   ├── main-window.tsx    # 主窗口组件
+│   ├── floating/          # 悬浮窗渲染进程
+│   └── src/
+│       ├── modules/       # 功能模块
+│       └── styles/        # 样式文件
 └── shared/                # 共享类型和常量
+    ├── constants/         # 常量定义
+    │   └── channels.ts    # IPC 通道名称
+    └── types/             # TypeScript 类型定义
+        ├── asr.ts         # ASR 相关类型
+        └── settings.ts    # 设置相关类型
 ```
 
 ## 开发
@@ -125,6 +153,7 @@ pnpm make
 - **TypeScript** - 类型安全
 - **Vite** - 构建工具
 - **火山引擎 ASR** - 语音识别服务
+- **火山引擎 LLM** - 大预言模型优化服务
 - **uiohook-napi** - 全局键盘监听
 - **node-insert-text** - 文字插入
 
@@ -146,7 +175,7 @@ pnpm make
 
 ### Q: 如何更换快捷键？
 
-目前快捷键固定为右 Option 键。如需自定义，可修改 `src/main/services/keyboard/keyboard.service.ts` 中的 `triggerKey` 配置。
+目前快捷键固定为右 Option/CTRL 键。如需自定义，可修改 `src/main/services/keyboard/keyboard.service.ts` 中的 `triggerKey` 配置。
 
 ## License
 
